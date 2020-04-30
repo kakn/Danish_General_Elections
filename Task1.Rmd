@@ -1,0 +1,182 @@
+---
+title: "Task1"
+author: "Nicolaj Valsted"
+date: "30/4/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library Imports
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+```
+
+## Reading and processing raw data
+
+### Load data
+
+```{r}
+FV19TOTA <- read_excel("data/FV19TOTA.xlsx")
+FV19TOTA <- FV19TOTA %>% rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
+                    "Area" = "...2",
+                    "Votes" = "...3")
+FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
+
+characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
+```
+
+### Find unique parties and fill empty spaces between parties for joining later
+
+```{r}
+FV19TOTA <- fill(FV19TOTA, "Party", .direction = "down")
+Parties <- unique(FV19TOTA$Party)[2:15]
+```
+
+### Find unique multi-member constituencies (storkredse) and format them to be used as keys for FV19TOTA dataset
+
+```{r}
+MMCs <- unique(characteristics_data$Storkreds)[2:11]
+for (i in 1:length(MMCs))
+{
+  MMCs[i] <- toupper(substr(MMCs[i], 4, nchar(MMCs[i])))
+}
+
+```
+
+as well as provinces, which are manually defined
+
+```{r}
+provinces = c("HOVEDSTADEN","SJÆLLAND-SYDDANMARK","MIDTJYLLAND-NORDJYLLAND")
+```
+
+### Convenience functions for subsetting data based on multi-member constituency (storkreds) and province (landsdel)
+
+The functions add the desired new columns to the data frame passed to it. It does so by copying the Area column and removing all elements that are not in a given vector. It then fills the holes.
+
+```{r}
+addMMCCol <- function(df,vecOfVal)
+{
+  df$MMC <- df$Area
+
+  for (row in 1:nrow(df))
+  {
+    area <- df[row, "MMC"]
+    if (!(area %in% vecOfVal))
+    {
+      df$MMC[row] = NA
+    }
+  }
+  
+  df <- fill(df, "MMC", .direction = "down")
+  return(df)
+}
+```
+
+```{r}
+addProvinceCol <- function(df,vecOfVal)
+{
+  df$Province <- df$Area
+
+  for (row in 1:nrow(df))
+  {
+    area <- df[row, "Province"]
+    if (!(area %in% vecOfVal))
+    {
+      df$Province[row] = NA
+    }
+  }
+  
+  df <- fill(df, "Province", .direction = "down")
+  return(df)
+}
+```
+
+### Formatting
+
+```{r}
+vote_distribution <- data.frame()
+
+# Slightly poor performance for this part of the code, but the size of the dataset is not exceptionally big, so it's fine.
+for (i in 1:length(Parties))
+{
+  tmp <- subset(FV19TOTA, Party == Parties[i]) # Extract a temporary dataframe from FV19TOTA for the corresponding party
+  
+  # Add and fill columns for multi-member constituencies and provinces.
+  tmp <- addMMCCol(tmp,MMCs)
+  tmp <- addProvinceCol(tmp,provinces)
+  
+  # Create a dateframe with the desired resulting columns
+  party_df <- data.frame(Province = as.character(),
+                         MMC = as.character(),
+                         ND = as.character(),
+                         Votes = as.integer(), 
+                         stringsAsFactors = FALSE)
+  
+  # Loop through multi-member constituencies and create sub-data-frames corresponding to the MMC
+  for (j in 1:length(MMCs))
+  {
+    mmc_sliced = subset(tmp, MMC==MMCs[j])
+    
+    # Build data frame correspoding to MMC
+    new_df <- data.frame(Province = mmc_sliced$Province,
+                         MMC = mmc_sliced$MMC,
+                         ND = mmc_sliced$Area,
+                         Votes = mmc_sliced$Votes,
+                         stringsAsFactors = FALSE)
+    
+    new_df <- new_df[!str_detect(new_df$ND, "[a-z]"), ]
+    new_df <- new_df[-1,] # Remove level of detail smaller than nomination district.
+    
+    party_df <- bind_rows(party_df,new_df) # Append newly created data frame for MMC to the data frame of entire party
+  }
+
+  party_df$Party = Parties[i]
+  party_df <- party_df %>% select("Party", everything()) # Move party column to first position
+  
+  vote_distribution <- bind_rows(vote_distribution,party_df) # Concatenate data frame for party to data frame of all parties 
+}
+
+# An artifact of the above cleaning is that SJÆLLAND-SYDDANMARK and MIDTJYLLAND-NORDJYLLAND
+# are still present in the ND column. They are manually removed with the following 3 lines
+SS_idcs <- which(vote_distribution$ND == provinces[2])
+MN_idcs <- which(vote_distribution$ND == provinces[3])
+vote_distribution <- vote_distribution[-c(SS_idcs,MN_idcs),] # Drops rows based on SS_idcs and MN_idcs
+```
+
+### Data format
+
+The formatted data is now in the data frame vote_distribution. It follows a similar tree structure like the FV19TOTA dataset, however, it has been horizontalized, such that, for each A. Socialdemokratiet entry in the Party column, the columns to the right of it contain more specific information about the location, going from province (landsdel), to MMC = multi-member constituency (storkreds) to ND = nomination district (opstillingskreds). The last column, Votes, contains the votes for the corresponding nomination district.
+
+```{r}
+vote_distribution
+```
+
+For example, if one wants to access the number of votes that Nye Borgerlige got in Roskilde, one could do the following
+
+```{r}
+subset(vote_distribution,
+       Party == "D. Nye Borgerlige" &
+       ND == "8. ROSKILDE")
+```
+
+and if one wanted to know the amount of votes that Stram Kurs got in the province Midtjylland-Nordjylland, one could type
+
+```{r}
+sum(subset(vote_distribution,
+           Party == "P. Stram Kurs" &
+           Province == "MIDTJYLLAND-NORDJYLLAND")
+           $Votes)
+```
+
+## Calculating seat allocation
+
+### as is
+
+### without the three specificed NDs
