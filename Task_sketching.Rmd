@@ -103,6 +103,25 @@ ggplot() +
   ggtitle("Denmark",subtitle = "landsdele") 
 ```
 
+## Exercises 30/04
+
+### Exercise 1
+
+```{r}
+asp <- array(data = c(189, 104, 10845, 10933),
+             dim = c(2,2),
+             dimnames = list(Treatment = c("Placebo", "Aspirin"),
+                             Attack = c("Yes", "No"))
+             )
+asp
+```
+
+```{r}
+chisq.test(asp, correct = FALSE)
+chisq.test(asp, correct = FALSE)$expected
+```
+
+The p-value is low which talks in favour of rejecting the null hypothesis that the two are identical.
 
 
 ## Task 2 sketching
