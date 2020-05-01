@@ -1,0 +1,55 @@
+---
+title: "Task1"
+author: "Nicolaj Valsted"
+date: "30/4/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library Imports
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+```
+
+## Reading and processing raw data
+
+### Load data
+
+```{r}
+FV19TOTA <- read_excel("data/FV19TOTA.xlsx") # No external preprocessing has been done to the imported data
+FV19TOTA <- FV19TOTA %>% rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
+                    "Area" = "...2",
+                    "Votes" = "...3")
+FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
+
+characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
+```
+
+### Fill empty spaces between parties for joining later
+
+```{r}
+FV19TOTA <- fill(FV19TOTA, "Party", .direction = "down")
+```
+
+# Merge and filter
+
+```{r}
+characteristics_data <- characteristics_data %>% rename("Area" = "Valgdistrikt - navn")
+rough_merged <- full_join(FV19TOTA, characteristics_data, by = "Area")
+vote_characteristics <- subset(rough_merged, !is.na(rough_merged$Storkreds))
+vote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Area")
+```
+
+```{r}
+vote_characteristics
+```
+
+
+
