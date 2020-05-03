@@ -51,5 +51,31 @@ vote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Ar
 vote_characteristics
 ```
 
+```{r}
+characteristics_data_w_parties <- characteristics_data
+characteristics_data_w_parties <- characteristics_data_w_parties[-c(1,2,3,4),]
+#characteristics_data_w_parties
 
+parties <- unique(vote_characteristics$Party)
+parties <- parties[which(!is.na(parties))]
+
+for (i in 1:length(parties))
+{
+  party_votes <- c()
+  for (j in 5:length(characteristics_data$Opstillingskreds))
+  {
+    slc <- slice(characteristics_data,j)
+    party_votes <- c(party_votes,subset(vote_characteristics,
+                                        Party == parties[i] &
+                                        Opstillingskreds == slc$Opstillingskreds &
+                                        Polling_district == slc$Area &
+                                        Storkreds == slc$Storkreds &
+                                        !is.na(Votes))$Votes[1])
+  }
+  
+  characteristics_data_w_parties[parties[i]] <- party_votes
+}
+
+characteristics_data_w_parties
+```
 
