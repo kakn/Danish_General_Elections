@@ -1,0 +1,107 @@
+---
+title: "Task3"
+author: "Kasper Gartside Knudsen"
+date: "3/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library Imports
+
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+```
+
+# Task1 (used in order to conduct analysis for Task3)
+
+```{r}
+FV19TOTA <- read_excel("data/FV19TOTA.xlsx") # No external preprocessing has been done to the imported data
+FV19TOTA <- FV19TOTA %>% rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
+                    "Area" = "...2",
+                    "Votes" = "...3")
+FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
+
+characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
+
+FV19TOTA <- fill(FV19TOTA, "Party", .direction = "down")
+
+characteristics_data <- characteristics_data %>% rename("Area" = "Valgdistrikt - navn")
+rough_merged <- full_join(FV19TOTA, characteristics_data, by = "Area")
+vote_characteristics <- subset(rough_merged, !is.na(rough_merged$Storkreds))
+vote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Area")
+characteristics_data_w_parties <- characteristics_data
+characteristics_data_w_parties <- characteristics_data_w_parties[-c(1,2,3,4),]
+#characteristics_data_w_parties
+
+parties <- unique(vote_characteristics$Party)
+parties <- parties[which(!is.na(parties))]
+
+for (i in 1:length(parties))
+{
+  party_votes <- c()
+  for (j in 5:length(characteristics_data$Opstillingskreds))
+  {
+    slc <- slice(characteristics_data,j)
+    party_votes <- c(party_votes,subset(vote_characteristics,
+                                        Party == parties[i] &
+                                        Opstillingskreds == slc$Opstillingskreds &
+                                        Polling_district == slc$Area &
+                                        Storkreds == slc$Storkreds &
+                                        !is.na(Votes))$Votes[1])
+  }
+  
+  characteristics_data_w_parties[parties[i]] <- party_votes
+}
+
+characteristics_data_w_parties
+```
+
+# Process of preparing data for analysis in task 3
+
+```{r}
+df <- characteristics_data_w_parties
+nrow(df)
+
+#Null hypothesis: The amount of seniors has no influence on whether the district is blue or not
+#Alternate hypothesis: The amount of seniors directly infuences whether the district is blue or not
+
+#renaming to access easier
+df <- rename(df, "numsenior" = "Antal personer...7")
+
+#compute median number of seniors (age 65+) 
+aveg <- median(as.numeric(df$numsenior))
+
+#Column added to DataFrame depicting whether the number of seniors is higher than the median number of seniors
+newdf <- df %>%
+  mutate(Age = ifelse(as.numeric(numsenior) < as.numeric(aveg), "Young",
+                 ifelse(as.numeric(numsenior) > as.numeric(aveg), "Old", NA))) 
+
+newdf
+#Columns added to accumlate Blue and Non-Blue votes
+newdf$NonBlue <- rowSums(newdf[,c(21,22,26,28,32,33,34)])
+newdf$Blue <- rowSums(newdf[,c(23,24,25,27,29,30,31)])
+#Column added to DataFrame depicting majority of votes in district are Blue or Non-Blue
+newdf <- newdf %>%
+  mutate(Colour = ifelse(Blue > NonBlue, "Blue", "NonBlue"))
+
+newdf
+```
+
+# Performing chi2 test on the prepared data
+
+```{r}
+#Contingency table of age and political views
+tab <- table(newdf$Age, newdf$Colour)
+tab
+nrow(newdf)
+#chi2 test
+test <- chisq.test(as.numeric(tab))
+test
+#p value is very close to 0, rejecting the null-hypothesis. The number of people aged 65+ therefore does impact the number of Blue votes
+```
