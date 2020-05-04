@@ -218,12 +218,36 @@ constituency_seat_qualification <- function(p,acs) # p = index of party of inter
   return(acs[p] > 0) # Simply checks if party was allocated a constituency seat
 }
 
-two_thirds_over_mean_qualification <- function()
+two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest, pr = provinces, vd = vote distribution data frame
 {
-  return(FALSE) # WIP
+  province_consituency_seats = c(39,50,46) # Constituency seats for the provinces
+  count = 0
+  for (i in 1:length(pr))
+  {
+    # Sum of votes for party in province
+    party_votes = sum(subset(vd,
+                             Party == P &
+                             Province == pr[i])
+                             $Votes)
+    
+    # sum of all votes in province
+    province_votes = sum(subset(vd,
+                                Province == pr[i])
+                                $Votes)
+    
+    mean_votes_per_seat = province_votes / province_consituency_seats[i] # Calculates mean votes per constituency seat in province
+    
+    if (party_votes >= mean_votes_per_seat)
+    {
+      count = count + 1
+    }
+  }
+  
+  return(count >= 2) # Checks if party qualifies 
+  
 }
 
-percentage_qualification <- function(P,vd) # p = party of interest, vd = vote distribution data frame
+percentage_qualification <- function(P,vd) # P = party of interest, vd = vote distribution data frame
 {
   total_votes = sum(vd$Votes) # Sum of all votes
   party_votes = sum(subset(vd, Party == P)$Votes) # Sum of votes for the specific party of interest
@@ -272,7 +296,7 @@ for (i in 1:length(Parties)) # Iterates through parties and adds the party to qu
     next
   }
   # Checks if party got at least as many votes as the mean number of votes given in a province per constituency seat in 2 provinces.
-  else if (two_thirds_over_mean_qualification())
+  else if (two_thirds_over_mean_qualification(Parties[i],provinces,vote_distribution))
   {
     qualified_parties <- c(qualified_parties, Parties[i])
     next
@@ -342,6 +366,14 @@ allocated_seats <- data.frame("Party" = Parties,
 allocated_seats
 ```
 
+```{r}
+qualified_parties
+for (i in 1:length(qualified_parties))
+{
+print(sum(subset(vote_distribution, Party == qualified_parties[i])$Votes) / sum(subset(vote_distribution,Party %in% qualified_parties)$Votes)*175)
+}
+```
+
 ## Allocation of seats given Nørrebro, Østerbro, and Vesterbro did not vote
 
 The process is identical to the above, except Nørrebro, Østerbro and Vesterbro are dropped from vote_distribution
@@ -396,7 +428,7 @@ for (i in 1:length(Parties)) # Iterates through parties and adds the party to qu
     next
   }
   # Checks if party got at least as many votes as the mean number of votes given in a province per constituency seat in 2 provinces.
-  else if (two_thirds_over_mean_qualification())
+  else if (two_thirds_over_mean_qualification(Parties[i],provinces,vote_distribution))
   {
     qualified_parties <- c(qualified_parties, Parties[i])
     next
