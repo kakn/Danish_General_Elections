@@ -32,6 +32,27 @@ FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
 characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
 ```
 
+### Fixing spelling inconsistencies
+
+```{r}
+name_mapping_from <- c("Dragør Skole",
+                       "Sønderkærhallen")
+
+name_mapping_to <- c("Dragør Skole Syd",
+                     "Sønderkærskolen")
+
+combined_name_mapping <- data.frame(from = name_mapping_from, to = name_mapping_to)
+
+for (i in 1:length(name_mapping_from))
+{
+  idx <- which(characteristics_data[5] == name_mapping_from[i])
+  characteristics_data[idx,5] = name_mapping_to[i]
+}
+
+combined_name_mapping
+```
+
+
 ### Fill empty spaces between parties for joining later
 
 ```{r}
