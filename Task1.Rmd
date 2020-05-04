@@ -144,10 +144,12 @@ for (i in 1:length(Parties))
 }
 
 # An artifact of the above cleaning is that SJÆLLAND-SYDDANMARK and MIDTJYLLAND-NORDJYLLAND
-# are still present in the ND column. They are manually removed with the following 3 lines
+# are still present in the ND column. They are manually removed with the following 4 lines.
+# The same goes for a troublesome polling district DOKK1, which gets classified as an ND.
 SS_idcs <- which(vote_distribution$ND == provinces[2])
 MN_idcs <- which(vote_distribution$ND == provinces[3])
-vote_distribution <- vote_distribution[-c(SS_idcs,MN_idcs),] # Drops rows based on SS_idcs and MN_idcs
+DOKK1_idcs <- which(vote_distribution$ND == "DOKK1")
+vote_distribution <- vote_distribution[-c(SS_idcs,MN_idcs,DOKK1_idcs),] # Drops rows
 ```
 
 ### Data format
@@ -173,6 +175,16 @@ sum(subset(vote_distribution,
            Party == "P. Stram Kurs" &
            Province == "MIDTJYLLAND-NORDJYLLAND")
            $Votes)
+```
+
+```{r}
+MMCs
+sum(subset(vote_distribution,Party == Parties[1] & MMC == MMCs[8])$Votes)
+```
+
+
+```{r}
+vote_distribution
 ```
 
 # Seat allocation
@@ -207,7 +219,6 @@ d_Hondt <- function (p,v,s)
   return(allocated_seats)
 }
 
-#d_Hondt(Parties,votes,5)
 ```
 
 ### Convenience functions for checking if party qualifies for leveling seats (tillægsmandater)
@@ -244,7 +255,6 @@ two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest,
   }
   
   return(count >= 2) # Checks if party qualifies 
-  
 }
 
 percentage_qualification <- function(P,vd) # P = party of interest, vd = vote distribution data frame
@@ -364,14 +374,6 @@ allocated_seats <- data.frame("Party" = Parties,
                               "Leveling_seats" = allocated_leveling_seats)
 
 allocated_seats
-```
-
-```{r}
-qualified_parties
-for (i in 1:length(qualified_parties))
-{
-print(sum(subset(vote_distribution, Party == qualified_parties[i])$Votes) / sum(subset(vote_distribution,Party %in% qualified_parties)$Votes)*175)
-}
 ```
 
 ## Allocation of seats given Nørrebro, Østerbro, and Vesterbro did not vote
