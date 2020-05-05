@@ -1,8 +1,11 @@
 ---
-title: "Task1"
-author: "Nicolaj Valsted"
-date: "30/4/2020"
-output: pdf_document
+title: "Documented code for task 1"
+date: "15/5/2020"
+author: "Group I"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
@@ -11,22 +14,26 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Library Imports
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 library(readxl)
 library(dplyr)
 library(tidyr)
 library(stringr)
 ```
 
+\newpage
+
 ## Reading and processing raw data
 
 ### Load data
 
-```{r}
-FV19TOTA <- read_excel("data/FV19TOTA.xlsx") # No external preprocessing has been done to the imported data
-FV19TOTA <- FV19TOTA %>% rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
-                    "Area" = "...2",
-                    "Votes" = "...3")
+```{r, message = FALSE}
+FV19TOTA <- read_excel("data/FV19TOTA.xlsx") # No external preprocessing has been done
+                                             # to the imported data
+FV19TOTA <- FV19TOTA %>%
+  rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
+         "Area" = "...2",
+         "Votes" = "...3")
 FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
 
 characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
@@ -56,9 +63,9 @@ as well as provinces, which are manually defined
 provinces = c("HOVEDSTADEN","SJÆLLAND-SYDDANMARK","MIDTJYLLAND-NORDJYLLAND")
 ```
 
-### Convenience functions for subsetting data based on multi-member constituency (storkreds) and province (landsdel)
+### Convenience functions allowing for subsetting data based on multi-member constituency (storkreds) and province (landsdel)
 
-The functions add the desired new columns to the data frame passed to it. It does so by copying the Area column and removing all elements that are not in a given vector. It then fills the holes.
+The functions add the desired new columns to the data frame passed to it. It does so by copying the Area column (which was named in the first code chunk) and removing all elements that are not in a given vector. It then fills the holes downwards.
 
 ```{r}
 addMMCCol <- function(df,vecOfVal)
@@ -97,16 +104,15 @@ addProvinceCol <- function(df,vecOfVal)
   return(df)
 }
 ```
-
+\newpage
 ### Formatting
 
 ```{r}
 vote_distribution <- data.frame()
-
-# Slightly poor performance for this part of the code, but the size of the dataset is not exceptionally big, so it's fine.
 for (i in 1:length(Parties))
 {
-  tmp <- subset(FV19TOTA, Party == Parties[i]) # Extract a temporary dataframe from FV19TOTA for the corresponding party
+  tmp <- subset(FV19TOTA, Party == Parties[i]) # Extract a temporary dataframe from
+                                               # FV19TOTA for the corresponding party
   
   # Add and fill columns for multi-member constituencies and provinces.
   tmp <- addMMCCol(tmp,MMCs)
@@ -119,7 +125,8 @@ for (i in 1:length(Parties))
                          Votes = as.integer(), 
                          stringsAsFactors = FALSE)
   
-  # Loop through multi-member constituencies and create sub-data-frames corresponding to the MMC
+  # Loop through multi-member constituencies and create sub-data-frames corresponding
+  # to the data associated with each multi-member consituency
   for (j in 1:length(MMCs))
   {
     mmc_sliced = subset(tmp, MMC==MMCs[j])
@@ -131,16 +138,19 @@ for (i in 1:length(Parties))
                          Votes = mmc_sliced$Votes,
                          stringsAsFactors = FALSE)
     
+    # Remove level of detail smaller than nomination district (based on lower case letters)
     new_df <- new_df[!str_detect(new_df$ND, "[a-z]"), ]
-    new_df <- new_df[-1,] # Remove level of detail smaller than nomination district.
+    new_df <- new_df[-1,] 
     
-    party_df <- bind_rows(party_df,new_df) # Append newly created data frame for MMC to the data frame of entire party
+    # Append newly created data frame for MMC to the data frame of entire party
+    party_df <- bind_rows(party_df,new_df)
   }
 
   party_df$Party = Parties[i]
-  party_df <- party_df %>% select("Party", everything()) # Move party column to first position
-  
-  vote_distribution <- bind_rows(vote_distribution,party_df) # Concatenate data frame for party to data frame of all parties 
+  # Move party column to first position for viewing convenience
+  party_df <- party_df %>% select("Party", everything()) 
+  # Concatenate data frame for party to data frame of all parties
+  vote_distribution <- bind_rows(vote_distribution,party_df)
 }
 
 # An artifact of the above cleaning is that SJÆLLAND-SYDDANMARK and MIDTJYLLAND-NORDJYLLAND
@@ -157,7 +167,7 @@ vote_distribution <- vote_distribution[-c(SS_idcs,MN_idcs,DOKK1_idcs),] # Drops 
 The formatted data is now in the data frame vote_distribution. It follows a similar tree structure like the FV19TOTA dataset, however, it has been horizontalized, such that, for each A. Socialdemokratiet entry in the Party column, the columns to the right of it contain more specific information about the location, going from province (landsdel), to MMC = multi-member constituency (storkreds) to ND = nomination district (opstillingskreds). The last column, Votes, contains the votes for the corresponding nomination district.
 
 ```{r}
-vote_distribution
+head(vote_distribution)
 ```
 
 For example, if one wants to access the number of votes that Nye Borgerlige got in Roskilde, one could do the following
@@ -176,17 +186,7 @@ sum(subset(vote_distribution,
            Province == "MIDTJYLLAND-NORDJYLLAND")
            $Votes)
 ```
-
-```{r}
-MMCs
-sum(subset(vote_distribution,Party == Parties[1] & MMC == MMCs[8])$Votes)
-```
-
-
-```{r}
-vote_distribution
-```
-
+\newpage
 # Seat allocation
 
 ## Convenience functions
@@ -194,24 +194,30 @@ vote_distribution
 ### Convenience function for allocating seats in a multi-member constituency (storkreds) based on d'Hondt's method.
 
 ```{r}
-# a priority queue would be optimal for this, but it seems that an implementation using standard R results in O(nlogn) insertion time, which makes it no better than an ordered list. Data set size is small, so it does not matter anyways.
+# a priority queue would be optimal for this, but it seems that an implementation using
+# standard R results in O(nlogn) insertion time, which makes it no better than an ordered
+# list. Data set size is small, so it does not matter much anyways.
 
-# The below implementation is based on an unordered list philosophy that only updates the quotient for the party that gets a seat in an iteration.
+# The below implementation is based on an unordered list philosophy that only updates the
+# quotient for the party that gets a seat in an iteration.
 
 d_Hondt <- function (p,v,s)
 {
-  allocated_seats <- c(1:length(p)) * 0 # Initialize a zero-vector of length number of parties for storing allocated seat
+  allocated_seats <- c(1:length(p)) * 0 # Initialize a zero-vector of length number of
+                                        # parties for storing allocated seats
   
   div_table <- data.frame("OV" = v, "V"  = v) # data frame for storing quotients
   div_table$div = 1
   
   for (i in 1:s)
   {
-    max_idx <- which(div_table$V == max(div_table$V)) # Find party which gets a seat allocated
+    # Find party which gets a seat allocated
+    max_idx <- which(div_table$V == max(div_table$V))
     allocated_seats[max_idx] = allocated_seats[max_idx] + 1 # Allocate seat
     
+    # Update divisor for party
     divisor <- div_table$div[max_idx] + 1 
-    div_table$div[max_idx] = divisor # Update divisor for party
+    div_table$div[max_idx] = divisor
     
     div_table$V[max_idx] = div_table$OV[max_idx] / divisor; # Assign new quotient to party
   }
@@ -220,17 +226,21 @@ d_Hondt <- function (p,v,s)
 }
 
 ```
-
+\newpage
 ### Convenience functions for checking if party qualifies for leveling seats (tillægsmandater)
 
 ```{r}
-constituency_seat_qualification <- function(p,acs) # p = index of party of interest, acs = allocated constituency seats
-{
+constituency_seat_qualification <- function(p,acs) # p = index of party of interest,
+{                                                  # acs = allocated constituency seats
+  
   return(acs[p] > 0) # Simply checks if party was allocated a constituency seat
+  
 }
 
-two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest, pr = provinces, vd = vote distribution data frame
-{
+two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest,
+{                                                       # pr = provinces,
+                                                        # vd = vote distribution data frame
+  
   province_consituency_seats = c(39,50,46) # Constituency seats for the provinces
   count = 0
   for (i in 1:length(pr))
@@ -246,7 +256,8 @@ two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest,
                                 Province == pr[i])
                                 $Votes)
     
-    mean_votes_per_seat = province_votes / province_consituency_seats[i] # Calculates mean votes per constituency seat in province
+    # Calculates mean votes per constituency seat in province
+    mean_votes_per_seat = province_votes / province_consituency_seats[i] 
     
     if (party_votes >= mean_votes_per_seat)
     {
@@ -257,20 +268,22 @@ two_thirds_over_mean_qualification <- function(P,pr,vd) # P = party of interest,
   return(count >= 2) # Checks if party qualifies 
 }
 
-percentage_qualification <- function(P,vd) # P = party of interest, vd = vote distribution data frame
-{
+percentage_qualification <- function(P,vd) # P = party of interest,
+{                                          # vd = vote distribution data frame
   total_votes = sum(vd$Votes) # Sum of all votes
-  party_votes = sum(subset(vd, Party == P)$Votes) # Sum of votes for the specific party of interest
+  party_votes = sum(subset(vd, Party == P)$Votes) # Sum of votes for the specific
+                                                  # party of interest
   return( (party_votes / total_votes) > 0.02)
 }
 ```
-
+\newpage
 ## Allocation of seats for 2019 results
 
 ### Allocating constituency seats (kredsmandater)
 
 ```{r}
-constituency_seats <- c(16, 11, 10, 2, 20, 12, 18, 18, 13, 15) # Contains number of constituency seats for each MMC
+# Creates vector of number of constituency seats for each MMC
+constituency_seats <- c(16, 11, 10, 2, 20, 12, 18, 18, 13, 15) 
 
 # Vector containing the combined number of constituency seats for each party
 allocated_constituency_seats <- c(1:length(Parties)) * 0 
@@ -286,8 +299,10 @@ for (i in 1:length(MMCs))
                                 MMC == MMCs[i])
                                 $Votes)) 
   }
-  MMC_seats <- d_Hondt(Parties, votes, constituency_seats[i]) # Allocates seats based on d'Hondt's method
-  allocated_constituency_seats <-  allocated_constituency_seats + MMC_seats # Adds newly allocated seats to the total
+  # Allocates seats based on d'Hondt's method
+  MMC_seats <- d_Hondt(Parties, votes, constituency_seats[i])
+  # Adds newly allocated seats to the total
+  allocated_constituency_seats <-  allocated_constituency_seats + MMC_seats
 }
 ```
 
@@ -297,7 +312,9 @@ for (i in 1:length(MMCs))
 # Find parties that qualify
 qualified_parties <- c()
 
-for (i in 1:length(Parties)) # Iterates through parties and adds the party to qualified_parties if one of the criteria is met
+# Iterates through parties and adds the party to qualified_parties if one of the criteria
+# is met
+for (i in 1:length(Parties)) 
 {
   # Checks if party got a constituency seat
   if (constituency_seat_qualification(i,allocated_constituency_seats))
@@ -305,7 +322,8 @@ for (i in 1:length(Parties)) # Iterates through parties and adds the party to qu
     qualified_parties <- c(qualified_parties, Parties[i])
     next
   }
-  # Checks if party got at least as many votes as the mean number of votes given in a province per constituency seat in 2 provinces.
+  # Checks if party got at least as many votes as the mean number of votes given in a
+  # province per constituency seat in 2 provinces.
   else if (two_thirds_over_mean_qualification(Parties[i],provinces,vote_distribution))
   {
     qualified_parties <- c(qualified_parties, Parties[i])
@@ -324,7 +342,8 @@ all_qualified_votes <- sum(subset(vote_distribution,
                                   Party %in% qualified_parties)
                                   $Votes)
 
-seat_key <- all_qualified_votes / 175 # Since no nonpartisan politicians (løsgængere) were elected, the divisor is 175.
+seat_key <- all_qualified_votes / 175 # Since no nonpartisan politicians (løsgængere)
+                                      # were elected, the divisor is 175.
 allocated_leveling_seats <- c(1:length(Parties)) * 0
 remainders <- c(1:length(Parties)) * 0
 
@@ -336,9 +355,11 @@ for (i in 1:length(Parties))
                               Party == Parties[i])
                               $Votes)
     
-    floored_q <- floor(party_votes / seat_key)
+    # Finds propootional seat allocation and splits into integer part and remainder
+    floored_q <- floor(party_votes / seat_key) 
     remainders[i] <- party_votes / seat_key - floored_q
     
+    # Allocates seats based on integer part of above and the already allocated seats
     party_leveling_seats <- floored_q - allocated_constituency_seats[i]
     allocated_leveling_seats[i] <- party_leveling_seats
   }
@@ -348,34 +369,34 @@ for (i in 1:length(Parties))
 leveling_seats <- c(11, 15, 14)
 total_leveling_seats <- sum(leveling_seats)
 
+# Finds how many seats are left to be allocated
 seats_diff <- total_leveling_seats - sum(allocated_leveling_seats)
 
-for (i in 1:length(Parties))
+# Allocates seat to party with greatest remainder as long as there are seats left
+while (seats_diff != 0)
 {
-  if (seats_diff == 0)
-  {
-    break
-  }
-  
-  gr_idx <- which(remainders == max(remainders))
-  allocated_leveling_seats[gr_idx] = allocated_leveling_seats[gr_idx] + 1
+  gr_idx <- which(remainders == max(remainders)) # Finds party with greatest remainder
+  allocated_leveling_seats[gr_idx] = allocated_leveling_seats[gr_idx] + 1 # Allocates seat
   
   remainders[gr_idx] = 0
   seats_diff = seats_diff - 1
 }
 ```
+\newpage
+### Final seat allocation (unaltered data)
 
-### Final seat allocation
+The dataframe below summarizes the results of the seat allocation with unaltered data. It can be observed, the results match the current, official allocation of seats as expected. 
 
 ```{r}
 allocated_seats <- data.frame("Party" = Parties,
-                              "Total_seats" = allocated_constituency_seats + allocated_leveling_seats,
                               "Constituency_seats" = allocated_constituency_seats,
-                              "Leveling_seats" = allocated_leveling_seats)
+                              "Leveling_seats" = allocated_leveling_seats,
+                              "Total" = allocated_constituency_seats +
+                                        allocated_leveling_seats)
 
 allocated_seats
 ```
-
+\newpage
 ## Allocation of seats given Nørrebro, Østerbro, and Vesterbro did not vote
 
 The process is identical to the above, except Nørrebro, Østerbro and Vesterbro are dropped from vote_distribution
@@ -388,13 +409,14 @@ vesterbro_idcs <- which(vote_distribution$ND == "9. VESTERBRO")
 vote_distribution <- vote_distribution[-c(oesterbro_idcs,
                                           noerrebro_idcs,
                                           vesterbro_idcs),]
-vote_distribution
+head(vote_distribution,n=7)
 ```
 
 ### Allocating constituency seats (kredsmandater)
 
 ```{r}
-constituency_seats <- c(16, 11, 10, 2, 20, 12, 18, 18, 13, 15) # Contains number of constituency seats for each MMC
+# Creates vector of number of constituency seats for each MMC
+constituency_seats <- c(16, 11, 10, 2, 20, 12, 18, 18, 13, 15) 
 
 # Vector containing the combined number of constituency seats for each party
 allocated_constituency_seats <- c(1:length(Parties)) * 0 
@@ -410,18 +432,22 @@ for (i in 1:length(MMCs))
                                 MMC == MMCs[i])
                                 $Votes)) 
   }
-  MMC_seats <- d_Hondt(Parties, votes, constituency_seats[i]) # Allocates seats based on d'Hondt's method
-  allocated_constituency_seats <-  allocated_constituency_seats + MMC_seats # Adds newly allocated seats to the total
+  # Allocates seats based on d'Hondt's method
+  MMC_seats <- d_Hondt(Parties, votes, constituency_seats[i])
+  # Adds newly allocated seats to the total
+  allocated_constituency_seats <-  allocated_constituency_seats + MMC_seats
 }
 ```
-
+\newpage
 ### Allocating leveling seats (tillægsmandater)
 
 ```{r}
 # Find parties that qualify
 qualified_parties <- c()
 
-for (i in 1:length(Parties)) # Iterates through parties and adds the party to qualified_parties if one of the criteria is met
+# Iterates through parties and adds the party to qualified_parties if one of the criteria
+# is met
+for (i in 1:length(Parties)) 
 {
   # Checks if party got a constituency seat
   if (constituency_seat_qualification(i,allocated_constituency_seats))
@@ -429,7 +455,8 @@ for (i in 1:length(Parties)) # Iterates through parties and adds the party to qu
     qualified_parties <- c(qualified_parties, Parties[i])
     next
   }
-  # Checks if party got at least as many votes as the mean number of votes given in a province per constituency seat in 2 provinces.
+  # Checks if party got at least as many votes as the mean number of votes given in a
+  # province per constituency seat in 2 provinces.
   else if (two_thirds_over_mean_qualification(Parties[i],provinces,vote_distribution))
   {
     qualified_parties <- c(qualified_parties, Parties[i])
@@ -442,13 +469,13 @@ for (i in 1:length(Parties)) # Iterates through parties and adds the party to qu
     next
   }
 }
-
 # Calculates "price per seat".
 all_qualified_votes <- sum(subset(vote_distribution,
                                   Party %in% qualified_parties)
                                   $Votes)
 
-seat_key <- all_qualified_votes / 175 # Since no nonpartisan politicians (løsgængere) were elected, the divisor is 175.
+seat_key <- all_qualified_votes / 175 # Since no nonpartisan politicians (løsgængere)
+                                      # were elected, the divisor is 175.
 allocated_leveling_seats <- c(1:length(Parties)) * 0
 remainders <- c(1:length(Parties)) * 0
 
@@ -460,9 +487,11 @@ for (i in 1:length(Parties))
                               Party == Parties[i])
                               $Votes)
     
-    floored_q <- floor(party_votes / seat_key)
+    # Finds propootional seat allocation and splits into integer part and remainder
+    floored_q <- floor(party_votes / seat_key) 
     remainders[i] <- party_votes / seat_key - floored_q
     
+    # Allocates seats based on integer part of above and the already allocated seats
     party_leveling_seats <- floored_q - allocated_constituency_seats[i]
     allocated_leveling_seats[i] <- party_leveling_seats
   }
@@ -472,31 +501,38 @@ for (i in 1:length(Parties))
 leveling_seats <- c(11, 15, 14)
 total_leveling_seats <- sum(leveling_seats)
 
+# Finds how many seats are left to be allocated
 seats_diff <- total_leveling_seats - sum(allocated_leveling_seats)
 
-for (i in 1:length(Parties))
+# Allocates seat to party with greatest remainder as long as there are seats left
+while (seats_diff != 0)
 {
-  if (seats_diff == 0)
-  {
-    break
-  }
-  
-  gr_idx <- which(remainders == max(remainders))
-  allocated_leveling_seats[gr_idx] = allocated_leveling_seats[gr_idx] + 1
+  gr_idx <- which(remainders == max(remainders)) # Finds party with greatest remainder
+  allocated_leveling_seats[gr_idx] = allocated_leveling_seats[gr_idx] + 1 # Allocates seat
   
   remainders[gr_idx] = 0
   seats_diff = seats_diff - 1
 }
 ```
-
+\newpage
 ### Final seat allocation (without Nørrebro, Østerbro, and Vesterbro)
 
-```{r}
-allocated_seats <- data.frame("Party" = Parties,
-                              "Total_seats" = allocated_constituency_seats + allocated_leveling_seats,
-                              "Constituency_seats" = allocated_constituency_seats,
-                              "Leveling_seats" = allocated_leveling_seats)
+The dataframe below summarizes the results of the seat allocation after altering the data.
 
-allocated_seats
+```{r}
+allocated_seats_altered <- data.frame("Party" = Parties,
+                                      "Constituency_seats" = allocated_constituency_seats,
+                                      "Leveling_seats" = allocated_leveling_seats,
+                                      "Total" = allocated_constituency_seats +
+                                                allocated_leveling_seats)
+
+allocated_seats_altered
+```
+
+The difference before and after alteration can be seen in the following dataframe. 4 Parties get a different number of seats. Radikale Venstre and Enhedslisten both lose a seat, while Dansk Folkeparti and Venstre each get an extra seat. This fits nicely with general understanding that left wing parties are more popular in the capital region, since removing a number of these votes swings the result slightly more in favour of the right wing.
+
+```{r}
+data.frame(Party = Parties,
+           diff = allocated_seats_altered$Total - allocated_seats$Total)
 ```
 

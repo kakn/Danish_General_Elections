@@ -1,0 +1,178 @@
+[1mdiff --git a/Task1.Rmd b/Task1.Rmd[m
+[1mindex 5b6c635..92d8c30 100644[m
+[1m--- a/Task1.Rmd[m
+[1m+++ b/Task1.Rmd[m
+[36m@@ -342,26 +342,127 @@[m [mallocated_seats <- data.frame("Party" = Parties,[m
+ allocated_seats[m
+ ```[m
+ [m
+[31m-## Allocation of seats given Nørrebro, Østrrbro, and Vesterbro did not vote[m
+[32m+[m[32m## Allocation of seats given Nørrebro, Østerbro, and Vesterbro did not vote[m
+ [m
+[31m-### Allocating constituency seats (kredsmandater)[m
+[32m+[m[32mThe process is identical to the above, except Nørrebro, Østerbro and Vesterbro are dropped from vote_distribution[m
+ [m
+[31m-### Allocating levelling seats (tillægsmandater)[m
+[32m+[m[32m```{r}[m
+[32m+[m[32moesterbro_idcs <- which(vote_distribution$ND == "1. ØSTERBRO")[m
+[32m+[m[32mnoerrebro_idcs <- which(vote_distribution$ND == "5. NØRREBRO")[m
+[32m+[m[32mvesterbro_idcs <- which(vote_distribution$ND == "9. VESTERBRO")[m
+ [m
+[31m-### Final seat allocation (without Nørrebro, Østerbro, and Vesterbro)[m
+[32m+[m[32mvote_distribution <- vote_distribution[-c(oesterbro_idcs,[m
+[32m+[m[32m                                          noerrebro_idcs,[m
+[32m+[m[32m                                          vesterbro_idcs),][m
+[32m+[m[32mvote_distribution[m
+[32m+[m[32m```[m
+ [m
+[31m-# Data for task 3[m
+[32m+[m[32m### Allocating constituency seats (kredsmandater)[m
+ [m
+ ```{r}[m
+[31m-characteristics_data <- characteristics_data %>% rename("Area" = "Valgdistrikt - navn")[m
+[31m-rough_merged <- full_join(FV19TOTA, characteristics_data, by = "Area")[m
+[31m-vote_characteristics <- subset(rough_merged, !is.na(rough_merged$Storkreds))[m
+[31m-vote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Area")[m
+[32m+[m[32mconstituency_seats <- c(16, 11, 10, 2, 20, 12, 18, 18, 13, 15) # Contains number of constituency seats for each MMC[m
+[32m+[m
+[32m+[m[32m# Vector containing the combined number of constituency seats for each party[m
+[32m+[m[32mallocated_constituency_seats <- c(1:length(Parties)) * 0[m[41m [m
+[32m+[m
+[32m+[m[32mfor (i in 1:length(MMCs))[m
+[32m+[m[32m{[m
+[32m+[m[32m  votes <- c()[m
+[32m+[m[32m  # Creates a vector of the number of votes each party got in the corresponding MMC[m
+[32m+[m[32m  for (j in 1:length(Parties))[m
+[32m+[m[32m  {[m
+[32m+[m[32m    votes <- c(votes, sum(subset(vote_distribution,[m[41m [m
+[32m+[m[32m                                Party == Parties[j] &[m
+[32m+[m[32m                                MMC == MMCs[i])[m
+[32m+[m[32m                                $Votes))[m[41m [m
+[32m+[m[32m  }[m
+[32m+[m[32m  MMC_seats <- d_Hondt(Parties, votes, constituency_seats[i]) # Allocates seats based on d'Hondt's method[m
+[32m+[m[32m  allocated_constituency_seats <-  allocated_constituency_seats + MMC_seats # Adds newly allocated seats to the total[m
+[32m+[m[32m}[m
+ ```[m
+ [m
+[32m+[m[32m### Allocating leveling seats (tillægsmandater)[m
+[32m+[m
+ ```{r}[m
+[31m-vote_characteristics[m
+[32m+[m[32m# Find parties that qualify[m
+[32m+[m[32mqualified_parties <- c()[m
+[32m+[m
+[32m+[m[32mfor (i in 1:length(Parties)) # Iterates through parties and adds the party to qualified_parties if one of the criteria is met[m
+[32m+[m[32m{[m
+[32m+[m[32m  # Checks if party got a constituency seat[m
+[32m+[m[32m  if (constituency_seat_qualification(i,allocated_constituency_seats))[m
+[32m+[m[32m  {[m
+[32m+[m[32m    qualified_parties <- c(qualified_parties, Parties[i])[m
+[32m+[m[32m    next[m
+[32m+[m[32m  }[m
+[32m+[m[32m  # Checks if party got at least as many votes as the mean number of votes given in a province per constituency seat in 2 provinces.[m
+[32m+[m[32m  else if (two_thirds_over_mean_qualification())[m
+[32m+[m[32m  {[m
+[32m+[m[32m    qualified_parties <- c(qualified_parties, Parties[i])[m
+[32m+[m[32m    next[m
+[32m+[m[32m  }[m
+[32m+[m[32m  # Checks if party got at least 2% of the votes nationwide[m[41m [m
+[32m+[m[32m  else if (percentage_qualification(Parties[i],vote_distribution))[m
+[32m+[m[32m  {[m
+[32m+[m[32m    qualified_parties <- c(qualified_parties, Parties[i])[m
+[32m+[m[32m    next[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m# Calculates "price per seat".[m
+[32m+[m[32mall_qualified_votes <- sum(subset(vote_distribution,[m
+[32m+[m[32m                                  Party %in% qualified_parties)[m
+[32m+[m[32m                                  $Votes)[m
+[32m+[m
+[32m+[m[32mseat_key <- all_qualified_votes / 175 # Since no nonpartisan politicians (løsgængere) were elected, the divisor is 175.[m
+[32m+[m[32mallocated_leveling_seats <- c(1:length(Parties)) * 0[m
+[32m+[m[32mremainders <- c(1:length(Parties)) * 0[m
+[32m+[m
+[32m+[m[32mfor (i in 1:length(Parties))[m
+[32m+[m[32m{[m
+[32m+[m[32m  if (Parties[i] %in% qualified_parties)[m
+[32m+[m[32m  {[m
+[32m+[m[32m    party_votes <- sum(subset(vote_distribution,[m
+[32m+[m[32m                              Party == Parties[i])[m
+[32m+[m[32m                              $Votes)[m
+[32m+[m[41m    [m
+[32m+[m[32m    floored_q <- floor(party_votes / seat_key)[m
+[32m+[m[32m    remainders[i] <- party_votes / seat_key - floored_q[m
+[32m+[m[41m    [m
+[32m+[m[32m    party_leveling_seats <- floored_q - allocated_constituency_seats[i][m
+[32m+[m[32m    allocated_leveling_seats[i] <- party_leveling_seats[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m# Remainder of seats get allocated based on greatest remainder[m
+[32m+[m[32mleveling_seats <- c(11, 15, 14)[m
+[32m+[m[32mtotal_leveling_seats <- sum(leveling_seats)[m
+[32m+[m
+[32m+[m[32mseats_diff <- total_leveling_seats - sum(allocated_leveling_seats)[m
+[32m+[m
+[32m+[m[32mfor (i in 1:length(Parties))[m
+[32m+[m[32m{[m
+[32m+[m[32m  if (seats_diff == 0)[m
+[32m+[m[32m  {[m
+[32m+[m[32m    break[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+[32m+[m[32m  gr_idx <- which(remainders == max(remainders))[m
+[32m+[m[32m  allocated_leveling_seats[gr_idx] = allocated_leveling_seats[gr_idx] + 1[m
+[32m+[m[41m  [m
+[32m+[m[32m  remainders[gr_idx] = 0[m
+[32m+[m[32m  seats_diff = seats_diff - 1[m
+[32m+[m[32m}[m
+ ```[m
+ [m
+[32m+[m[32m### Final seat allocation (without Nørrebro, Østerbro, and Vesterbro)[m
+ [m
+[32m+[m[32m```{r}[m
+[32m+[m[32mallocated_seats <- data.frame("Party" = Parties,[m
+[32m+[m[32m                              "Total_seats" = allocated_constituency_seats + allocated_leveling_seats,[m
+[32m+[m[32m                              "Constituency_seats" = allocated_constituency_seats,[m
+[32m+[m[32m                              "Leveling_seats" = allocated_leveling_seats)[m
+[32m+[m
+[32m+[m[32mallocated_seats[m
+[32m+[m[32m```[m
+ [m
+[1mdiff --git a/Task3_data_prep.Rmd b/Task3_data_prep.Rmd[m
+[1mindex 27c1750..4665e8c 100644[m
+[1m--- a/Task3_data_prep.Rmd[m
+[1m+++ b/Task3_data_prep.Rmd[m
+[36m@@ -51,5 +51,31 @@[m [mvote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Ar[m
+ vote_characteristics[m
+ ```[m
+ [m
+[32m+[m[32m```{r}[m
+[32m+[m[32mcharacteristics_data_w_parties <- characteristics_data[m
+[32m+[m[32mcharacteristics_data_w_parties <- characteristics_data_w_parties[-c(1,2,3,4),][m
+[32m+[m[32m#characteristics_data_w_parties[m
+[32m+[m
+[32m+[m[32mparties <- unique(vote_characteristics$Party)[m
+[32m+[m[32mparties <- parties[which(!is.na(parties))][m
+ [m
+[32m+[m[32mfor (i in 1:length(parties))[m
+[32m+[m[32m{[m
+[32m+[m[32m  party_votes <- c()[m
+[32m+[m[32m  for (j in 5:length(characteristics_data$Opstillingskreds))[m
+[32m+[m[32m  {[m
+[32m+[m[32m    slc <- slice(characteristics_data,j)[m
+[32m+[m[32m    party_votes <- c(party_votes,subset(vote_characteristics,[m
+[32m+[m[32m                                        Party == parties[i] &[m
+[32m+[m[32m                                        Opstillingskreds == slc$Opstillingskreds &[m
+[32m+[m[32m                                        Polling_district == slc$Area &[m
+[32m+[m[32m                                        Storkreds == slc$Storkreds &[m
+[32m+[m[32m                                        !is.na(Votes))$Votes[1])[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+[32m+[m[32m  characteristics_data_w_parties[parties[i]] <- party_votes[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mcharacteristics_data_w_parties[m
+[32m+[m[32m```[m
+ [m
