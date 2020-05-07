@@ -29,6 +29,72 @@ FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
 
 characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
 
+name_mapping_from <- c("Dragør Skole",
+                       "Sønderkærhallen",
+                       "Fuglebjerg Hallen",
+                       "Grønbro-Hallen",
+                       "Ll. Næstved Skole-Karrebækvej",
+                       "Kobberbakkeskolen Sct. Jørgens",
+                       "Ll Næstved Skole-Herlufsholmve",
+                       "Ll Næstved Skole - Hyllinge",
+                       "Ll Næstved Skole - Karrebæk",
+                       "Karlslundehallerne",
+                       "Tunehallerne",
+                       "Hundigehallen",
+                       "Havdrup",
+                       "Csv-Skolen",
+                       "Kroggårdskolen",
+                       "Rasmus Rask Skolen",
+                       "Bjerreby",
+                       "Skibethallen Nord",
+                       "Grejsdalshallen Nord",
+                       "Petersmindehallen Nord",
+                       "Dgi-Huset Syd",
+                       "Vindinghallen Syd",
+                       "Csv Syd",
+                       "Tilst Skole, Tilst",
+                       "Lystrup Skole",
+                       "Gjerlev Forsamlingshus",
+                       "Asferg Forsamlingshus")
+
+name_mapping_to <- c("Dragør Skole Syd",
+                     "Sønderkærskolen",
+                     "Fuglebjerg",
+                     "Grønbro Hallen",
+                     "Lille Næstved Skole - Karrebæk",
+                     "Kobberbakkeskolen - Sct. Jørge",
+                     "Lille Næstved Skole - Herlufsh",
+                     "Lille Næstved Skole - Hyllinge",
+                     "Lille Næstved Skole - Karrebæk",
+                     "Karlslunde Hallerne",
+                     "Tune Hallerne",
+                     "Hundige Hallen",
+                     "Havdrup Idrætscenter",
+                     "CSV-Skolen",
+                     "Kroggårdsskolen",
+                     "Rasmus Rask-Skolen",
+                     "Bjerreby/Landet",
+                     "Skibet Hallen Nord",
+                     "Grejsdalen Nord",
+                     "Multihallen v. Petersmindeskol",
+                     "DGI-Huset Syd",
+                     "Vinding Idræts Center Syd",
+                     "CSV - Vejle Syd",
+                     "TST Aktiv-Center, Tilst",
+                     "Lystrup Hallen",
+                     "Gjerlev Aktivitetshus",
+                     "Asferg Træningshus")
+
+combined_name_mapping <- data.frame(from = name_mapping_from, to = name_mapping_to)
+
+for (i in 1:length(name_mapping_from))
+{
+  idx <- which(characteristics_data[5] == name_mapping_from[i])
+  characteristics_data[idx,5] = name_mapping_to[i]
+}
+
+combined_name_mapping
+
 FV19TOTA <- fill(FV19TOTA, "Party", .direction = "down")
 
 characteristics_data <- characteristics_data %>% rename("Area" = "Valgdistrikt - navn")
@@ -76,21 +142,18 @@ df <- rename(df, "numsenior" = "Antal personer...7")
 
 #compute median number of seniors (age 65+) 
 aveg <- median(as.numeric(df$numsenior))
-
+aveg
 #Column added to DataFrame depicting whether the number of seniors is higher than the median number of seniors
 newdf <- df %>%
   mutate(Age = ifelse(as.numeric(numsenior) < as.numeric(aveg), "Young",
                  ifelse(as.numeric(numsenior) > as.numeric(aveg), "Old", NA))) 
 
-newdf
 #Columns added to accumlate Blue and Non-Blue votes
 newdf$NonBlue <- rowSums(newdf[,c(21,22,26,28,32,33,34)])
 newdf$Blue <- rowSums(newdf[,c(23,24,25,27,29,30,31)])
 #Column added to DataFrame depicting majority of votes in district are Blue or Non-Blue
 newdf <- newdf %>%
   mutate(Colour = ifelse(Blue > NonBlue, "Blue", "NonBlue"))
-
-newdf
 ```
 
 # Performing chi2 test on the prepared data
@@ -99,9 +162,10 @@ newdf
 #Contingency table of age and political views
 tab <- table(newdf$Age, newdf$Colour)
 tab
+sum(as.numeric(tab))
 nrow(newdf)
 #chi2 test
 test <- chisq.test(as.numeric(tab))
-test
+test$expected
 #p value is very close to 0, rejecting the null-hypothesis. The number of people aged 65+ therefore does impact the number of Blue votes
 ```
