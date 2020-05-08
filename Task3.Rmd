@@ -139,14 +139,15 @@ nrow(df)
 
 #renaming to access easier
 df <- rename(df, "numsenior" = "Antal personer...7")
+df <- rename(df, "totalpop" = "Antal personer...6")
 
 #compute median number of seniors (age 65+) 
-aveg <- median(as.numeric(df$numsenior))
+aveg <- median(as.numeric(df$numsenior)/as.numeric(df$totalpop))
 aveg
 #Column added to DataFrame depicting whether the number of seniors is higher than the median number of seniors
 newdf <- df %>%
-  mutate(Age = ifelse(as.numeric(numsenior) < as.numeric(aveg), "Young",
-                 ifelse(as.numeric(numsenior) > as.numeric(aveg), "Old", NA))) 
+  mutate(Age = ifelse(as.numeric(numsenior)/as.numeric(totalpop) < as.numeric(aveg), "Young",
+                 ifelse(as.numeric(numsenior)/as.numeric(totalpop) > as.numeric(aveg), "Old", NA))) 
 
 #Columns added to accumlate Blue and Non-Blue votes
 newdf$NonBlue <- rowSums(newdf[,c(21,22,26,28,32,33,34)])
@@ -154,6 +155,8 @@ newdf$Blue <- rowSums(newdf[,c(23,24,25,27,29,30,31)])
 #Column added to DataFrame depicting majority of votes in district are Blue or Non-Blue
 newdf <- newdf %>%
   mutate(Colour = ifelse(Blue > NonBlue, "Blue", "NonBlue"))
+
+newdf
 ```
 
 # Performing chi2 test on the prepared data
@@ -165,7 +168,7 @@ tab
 sum(as.numeric(tab))
 nrow(newdf)
 #chi2 test
-test <- chisq.test(as.numeric(tab))
-test$expected
+test <- chisq.test(tab, correct=FALSE)
+test
 #p value is very close to 0, rejecting the null-hypothesis. The number of people aged 65+ therefore does impact the number of Blue votes
 ```
