@@ -1,0 +1,896 @@
+---
+title: "work_on_4_part_2"
+author: "dffdfd"
+date: "5/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(ggplot2)
+library(xlsx)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(gridExtra)
+library(gtable)
+library(grid)
+library(tmap)
+```
+
+```{r}
+map_data <- read_sf("C:/Users/andre/OneDrive/Documents/ITU/fyp/4/DAGI/dagi_10m_nohist_l1.landsdel/landsdel.shp")
+map_data <- summarise(group_by(map_data, navn))
+map_data <- mutate(map_data, navn = na_if(navn, "Vest- og Sydsjælland"))
+map_data <- mutate(map_data, navn = na_if(navn, "Østsjælland"))
+map_data <- mutate(map_data, navn = replace_na(navn, "Sjælland"))
+map_data <- summarise(group_by(map_data, navn))
+map_data
+
+
+mandat_data <- read.xlsx2("C:/Users/andre/OneDrive/Documents/ITU/fyp/4/mandater.xlsx",1,stringsAsFactors = FALSE)
+mandat_data <- filter(mandat_data, Mandater != "-")
+mandat_data$Mandater <- as.integer(mandat_data$Mandater)
+mandat_data <- mutate(mandat_data, navn = na_if(navn, ""))
+mandat_data <- fill(mandat_data, navn, .direction = "down")
+mandat_data
+
+map_data_2 <- left_join(map_data, mandat_data, by = "navn")
+map_data_2
+```
+
+
+```{r}
+ggplot(map_data) + geom_sf(aes(fill=navn)) + xlab("longtitude") + ylab("lattitude") + ggsave("plot.png", width = 1, height = 1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+Background layer (using map_data)
+
+
+```{r}
+map_data_3 <- map_data_2
+# 1. make new column that has "red" if red party and "blue" if blue party
+map_data_4 <- filter(map_data_3, Partier == "A. Socialdemokratiet" | Partier == "B. Radikale Venstre" | Partier == "F. SF - Socialistisk Folkeparti" | Partier == "Ø. Enhedslisten" | Partier == "Å. Alternativet")
+map_data_4 <- mutate(map_data_4, block = "red")
+map_data_4 <- summarise(group_by(map_data_4, navn, Partier, block))
+map_data_4 <- st_drop_geometry(map_data_4)
+map_data_3 <- left_join(map_data_3, map_data_4, by = c("navn", "Partier"))
+map_data_3 <- mutate(map_data_3, block = replace_na(block, "blue"))
+map_data_3
+
+# 2. add the mandates for each "navn" for each of the blocks
+map_data_3$block_mandates <- ave(map_data_3$Mandater, map_data_3$navn, map_data_3$block, FUN=sum)
+map_data_3
+
+# 3. remove the party-names column
+map_data_3 <- summarise(group_by(map_data_3, navn, block, block_mandates))
+map_data_3
+
+# 4. check whether the blue block or the red block has won that "storkreds" or if it is a tie and add the result to a new column
+winner_map_data <- map_data_3
+
+winner_map_data$winning_mandates_number <- ave(winner_map_data$block_mandates, winner_map_data$navn, FUN=max)
+winner_map_data <- mutate(winner_map_data, winning_block = identical(block_mandates, winning_mandates_number))
+winner_map_data <- filter(winner_map_data, winning_block == TRUE)
+winner_map_data <- summarise(group_by(winner_map_data, navn, block))
+
+#hvis 2 rækker i træk har samme værdi i 'navn', så replace TRUE med 'tie':
+checkker <- summarise(group_by(winner_map_data, navn), tie = n()>1)
+checkker <- st_drop_geometry(checkker)
+winner_map_data <- left_join(winner_map_data, checkker, by = "navn")
+
+replace_tie <- filter(winner_map_data, tie == TRUE)
+replace_tie <- mutate(replace_tie, winner = "tie")
+replace_tie <- st_drop_geometry(replace_tie)
+
+
+# 5. add this new column to map_data
+winner_map_data <- left_join(winner_map_data, replace_tie, by = "navn")
+winner_map_data <- summarise(group_by(winner_map_data, navn, block.x, winner))
+winner_map_data <- mutate(winner_map_data, winner = replace_na(winner, block.x))
+winner_map_data <- summarise(group_by(winner_map_data, navn, winner))
+winner_map_data
+```
+
+
+
+
+
+
+
+```{r}
+winner_map <- ggplot(winner_map_data) + geom_sf(aes(fill=winner)) + scale_fill_manual(values=c("blue", "red", "yellow")
+) + xlab("longtitude") + ylab("lattitude") + ggsave("winner_map.png", width = 6, height = 6)
+winner_map
+```
+
+
+```{r}
+winner_map <- ggplot(winner_map_data) + geom_sf(aes(fill=winner)) + scale_fill_manual(values=c("blue", "red", "yellow")
+) + xlab("longtitude") + ylab("lattitude") + ggsave("winner_map2.png", width = 10, height = 10)
+```
+
+
+```{r}
+map_data_2 <- mutate(map_data_2, geometry = st_centroid(geometry))
+map_data_2
+```
+
+
+
+
+
+```{r}
+ggplot(winner_map_data) + geom_sf(aes(fill=winner)) + scale_fill_manual(values=c("blue", "red", "yellow")
+) + xlab("longtitude") + ylab("lattitude") + geom_sf(data = map_data_2) + ggsave("background_map_dots.png")
+```
+
+
+```{r}
+map_data_2
+```
+
+```{r}
+bornholm_data <- filter(map_data_2, navn == "Bornholm")
+byen_kobenhavn_data <- filter(map_data_2, navn == "Byen København")
+fyn_data <- filter(map_data_2, navn == "Fyn")
+kobenhavns_omegn_data <- filter(map_data_2, navn == "Københavns omegn")
+nordjylland_data <- filter(map_data_2, navn == "Nordjylland")
+nordsjaelland_data <- filter(map_data_2, navn == "Nordsjælland")
+ostjylland_data <- filter(map_data_2, navn == "Østjylland")
+sjaelland_data <- filter(map_data_2, navn == "Sjælland")
+sydjylland_data <- filter(map_data_2, navn == "Sydjylland")
+vestjylland_data <- filter(map_data_2, navn == "Vestjylland")
+```
+
+
+```{r}
+byen_kobenhavn_data
+```
+
+1
+
+```{r}
+bornholm_data <- bornholm_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(bornholm_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+bornholm_pie_chart <- ggplot(bornholm_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Bornholm") + ggsave("Bornholm_pie_chart.png")
+bornholm_pie_chart
+```
+
+2
+
+```{r}
+byen_kobenhavn_data <- byen_kobenhavn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(byen_kobenhavn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+byen_kobenhavn_pie_chart <- ggplot(byen_kobenhavn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Byen København") + ggsave("byen_kobenhavn_pie_chart.png")
+byen_kobenhavn_pie_chart
+```
+
+
+Alternativet = "green" 
+Socialdemokratiet = "#CC0000"
+Radikale venstre = "#FF3399"
+Konservative = "dark green"
+SF = "#FF6666" 
+Liberal alliance = "orange" 
+Dansk Folkeparti = "#000099" 
+Enhedslisten = "#FF0000" 
+Venstre = "#6699FF"
+
+
+
+3
+
+```{r}
+fyn_data <- fyn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(fyn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+fyn_pie_chart <- ggplot(fyn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Fyn") + ggsave("fyn_pie_chart.png")
+fyn_pie_chart
+```
+
+4
+
+```{r}
+kobenhavns_omegn_data <- kobenhavns_omegn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(kobenhavns_omegn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+kobenhavns_omegn_pie_chart <- ggplot(kobenhavns_omegn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Københavns Omegn") + ggsave("kobenhavns_omegn_pie_chart.png")
+kobenhavns_omegn_pie_chart
+```
+
+5
+
+```{r}
+nordjylland_data <- nordjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordjylland_pie_chart <- ggplot(nordjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Nordjylland") + ggsave("nordjylland_pie_chart.png")
+nordjylland_pie_chart
+```
+
+6
+
+```{r}
+nordsjaelland_data <- nordsjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordsjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordsjaelland_pie_chart <- ggplot(nordsjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Nordsjælland") + ggsave("nordsjælland_pie_chart.png")
+nordsjaelland_pie_chart
+```
+
+7
+
+```{r}
+ostjylland_data <- ostjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(ostjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+ostjylland_pie_chart <- ggplot(ostjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Østjylland") + ggsave("ostjylland_pie_chart.png")
+ostjylland_pie_chart
+```
+
+8
+
+```{r}
+sjaelland_data <- sjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sjaelland_pie_chart <- ggplot(sjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Sjælland") + ggsave("sjaelland_pie_chart.png")
+sjaelland_pie_chart
+```
+
+9
+
+```{r}
+sydjylland_data <- sydjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sydjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sydjylland_pie_chart <- ggplot(sydjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Sydjylland") + ggsave("sydjylland_pie_chart.png")
+sydjylland_pie_chart
+```
+
+10
+
+```{r}
+vestjylland_data <- vestjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(vestjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+vestjylland_pie_chart <- ggplot(vestjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5) + ggtitle("Vestjylland") + ggsave("vestjylland_pie_chart.png")
+vestjylland_pie_chart
+```
+
+
+bornholm_data <- filter(map_data_2, navn == "Bornholm")
+byen_kobenhavn_data <- filter(map_data_2, navn == "Byen København")
+fyn_data <- filter(map_data_2, navn == "Fyn")
+kobenhavns_omegn_data <- filter(map_data_2, navn == "Københavns omegn")
+nordjylland_data <- filter(map_data_2, navn == "Nordjylland")
+nordsjaelland_data <- filter(map_data_2, navn == "Nordsjælland")
+ostjylland_data <- filter(map_data_2, navn == "Østjylland")
+sjaelland_data <- filter(map_data_2, navn == "Sjælland")
+sydjylland_data <- filter(map_data_2, navn == "Sydjylland")
+vestjylland_data
+
+
+```{r}
+bornholm_data <- bornholm_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(bornholm_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+bornholm_pie_chart <- ggplot(bornholm_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+byen_kobenhavn_data <- byen_kobenhavn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(byen_kobenhavn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+byen_kobenhavn_pie_chart <- ggplot(byen_kobenhavn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+fyn_data <- fyn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(fyn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+fyn_pie_chart <- ggplot(fyn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+kobenhavns_omegn_data <- kobenhavns_omegn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(kobenhavns_omegn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+kobenhavns_omegn_pie_chart <- ggplot(kobenhavns_omegn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+nordjylland_data <- nordjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordjylland_pie_chart <- ggplot(nordjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+nordsjaelland_data <- nordsjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordsjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordsjaelland_pie_chart <- ggplot(nordsjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+ostjylland_data <- ostjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(ostjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+ostjylland_pie_chart <- ggplot(ostjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+sjaelland_data <- sjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sjaelland_pie_chart <- ggplot(sjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+sydjylland_data <- sydjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sydjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sydjylland_pie_chart <- ggplot(sydjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+vestjylland_data <- vestjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(vestjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+vestjylland_pie_chart <- ggplot(vestjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF")) + geom_text(aes(y = ypos, label = Mandater), color = "white", size=5)
+
+
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+mylegend<-g_legend(ostjylland_pie_chart)
+
+p3 <- grid.arrange(arrangeGrob(
+  bornholm_pie_chart + theme(legend.position="none") + labs(caption = "Bornholm"), 
+  byen_kobenhavn_pie_chart + theme(legend.position="none") + labs(caption = "Byen København"),
+  fyn_pie_chart + theme(legend.position="none") + labs(caption = "Fyn"), 
+  kobenhavns_omegn_pie_chart + theme(strip.text = , legend.position="none") + labs(caption = "Københavns Omegn"), 
+  nordjylland_pie_chart + theme(legend.position="none") + labs(caption = "Nordjylland"), 
+  nordsjaelland_pie_chart + theme(legend.position="none") + labs(caption = "Nordsjælland"), 
+  ostjylland_pie_chart + theme(legend.position="none") + labs(caption = "Østjylland"), 
+  sjaelland_pie_chart + theme(legend.position="none") + labs(caption = "Sjælland"), 
+  sydjylland_pie_chart + theme(legend.position="none") + labs(caption = "Sydjylland"), 
+  vestjylland_pie_chart + theme(legend.position="none") + labs(caption = "Vestjylland"),
+                         nrow=5),
+             mylegend, ncol=2,heights=c(75, 1), widths=c(1,1))
+```
+
+
+
+```{r}
+bornholm_data <- bornholm_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(bornholm_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+bornholm_pie_chart <- ggplot(bornholm_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#6699FF"))
+
+byen_kobenhavn_data <- byen_kobenhavn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(byen_kobenhavn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+byen_kobenhavn_pie_chart <- ggplot(byen_kobenhavn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF"))
+
+fyn_data <- fyn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(fyn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+fyn_pie_chart <- ggplot(fyn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF"))
+
+kobenhavns_omegn_data <- kobenhavns_omegn_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(kobenhavns_omegn_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+kobenhavns_omegn_pie_chart <- ggplot(kobenhavns_omegn_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF"))
+
+nordjylland_data <- nordjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordjylland_pie_chart <- ggplot(nordjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "#000099", "#FF0000", "#6699FF"))
+
+nordsjaelland_data <- nordsjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(nordsjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+nordsjaelland_pie_chart <- ggplot(nordsjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF"))
+
+ostjylland_data <- ostjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(ostjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+ostjylland_pie_chart <- ggplot(ostjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF"))
+
+sjaelland_data <- sjaelland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sjaelland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sjaelland_pie_chart <- ggplot(sjaelland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "#000099", "#FF0000", "#6699FF"))
+
+sydjylland_data <- sydjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(sydjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+sydjylland_pie_chart <- ggplot(sydjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#336666", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF"))
+
+vestjylland_data <- vestjylland_data %>% 
+  arrange(desc(Partier)) %>%
+  mutate(prop = Mandater / sum(vestjylland_data$Mandater) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+vestjylland_pie_chart <- ggplot(vestjylland_data, aes(x="", y=prop, fill=Partier)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF"))
+
+
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+mylegend<-g_legend(ostjylland_pie_chart)
+
+p3 <- grid.arrange(arrangeGrob(
+  bornholm_pie_chart + theme(legend.position="none") + labs(caption = "Bornholm"), 
+  byen_kobenhavn_pie_chart + theme(legend.position="none") + labs(caption = "Byen København"),
+  fyn_pie_chart + theme(legend.position="none") + labs(caption = "Fyn"), 
+  kobenhavns_omegn_pie_chart + theme(strip.text = , legend.position="none") + labs(caption = "Københavns Omegn"), 
+  nordjylland_pie_chart + theme(legend.position="none") + labs(caption = "Nordjylland"), 
+  nordsjaelland_pie_chart + theme(legend.position="none") + labs(caption = "Nordsjælland"), 
+  ostjylland_pie_chart + theme(legend.position="none") + labs(caption = "Østjylland"), 
+  sjaelland_pie_chart + theme(legend.position="none") + labs(caption = "Sjælland"), 
+  sydjylland_pie_chart + theme(legend.position="none") + labs(caption = "Sydjylland"), 
+  vestjylland_pie_chart + theme(legend.position="none") + labs(caption = "Vestjylland"),
+                         nrow=5),
+             mylegend, ncol=2,heights=c(75, 1), widths=c(1,1))
+```
+
+
+
+
+
+
+```{r}
+distortion_data <- map_data_2
+
+distortion_data <- st_zm(distortion_data)
+
+distortion_data_2 <- distortion_data
+distortion_data_2$sum_mandates <- ave(distortion_data_2$Mandater, distortion_data_2$navn, FUN = sum)
+distortion_data_2 <- summarise(group_by(distortion_data_2, navn, sum_mandates))
+
+distortion_data_2
+```
+
+
+```{r}
+OpK_cont <- cartogram_cont(distortion_data, "Mandater", itermax = 10)
+```
+
+```{r}
+OpK_cont_2 <- cartogram_cont(distortion_data_2, "sum_mandates", itermax = 10)
+```
+
+```{r}
+tm_shape(OpK_cont_2) + tm_polygons("sum_mandates", style= "jenks") +
+  tm_layout(frame = FALSE, legend.position = c("right","top"))
+```
+
+^ do this with population aswell
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+grid_arrange_shared_legend <-
+  function(...,
+           ncol = length(list(...)),
+           nrow = 3,
+           position = c("bottom", "right")) {
+    
+    plots <- list(...)
+    position <- match.arg(position)
+    g <-
+      ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+    legend <- g[[which(sapply(g, function(x)
+      x$name) == "guide-box")]]
+    lheight <- sum(legend$height)
+    lwidth <- sum(legend$width)
+    gl <- lapply(plots, function(x)
+      x + theme(legend.position = "none"))
+    gl <- c(gl, ncol = ncol, nrow = nrow)
+    
+    combined <- switch(
+      position,
+      "bottom" = arrangeGrob(
+        do.call(arrangeGrob, gl),
+        legend,
+        ncol = 1,
+        heights = unit.c(unit(1, "npc") - lheight, lheight)
+      ),
+      "right" = arrangeGrob(
+        do.call(arrangeGrob, gl),
+        legend,
+        ncol = 2,
+        widths = unit.c(unit(1, "npc") - lwidth, lwidth)
+      )
+    )
+    
+    grid.newpage()
+    grid.draw(combined)
+    
+    # return gtable invisibly
+    invisible(combined)
+    
+  }
+
+
+
+
+grid_arrange_shared_legend(bornholm_pie_chart, byen_kobenhavn_pie_chart, fyn_pie_chart, kobenhavns_omegn_pie_chart, nordjylland_pie_chart, nordsjaelland_pie_chart, ostjylland_pie_chart, sjaelland_pie_chart, sydjylland_pie_chart, vestjylland_pie_chart)
+
+
+#grid.arrange(bornholm_pie_chart, byen_kobenhavn_pie_chart, fyn_pie_chart, kobenhavns_omegn_pie_chart, nordjylland_pie_chart, nordsjaelland_pie_chart, ostjylland_pie_chart, sjaelland_pie_chart, sydjylland_pie_chart, vestjylland_pie_chart, nrow = 4)
+```
+
+
+
+
+
+
+
+
+
+
+ggplot(winner_map_data) + geom_sf(aes(fill=winner)) + scale_fill_manual(values=c("blue", "red", "yellow")
+) + xlab("longtitude") + ylab("lattitude")
+
+```{r}
+winner_map + geom_sf(data = byen_kobenhavn_data) +
+  geom_bar(aes(x="", y=prop, fill=Partier), data = byen_kobenhavn_data, stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + scale_fill_manual(values=c("green", "#CC0000", "#FF3399", "dark green", "#FF6666", "orange", "#000099", "#FF0000", "#6699FF", "grey", "magenta", "black"))
+```
+
+
+```{r}
+byen_kobenhavn_data
+```
+
+
+
+right now I am seeing if I can store the plots in a new column 
+```{r}
+byen_kobenhavn_data <- mutate(byen_kobenhavn_data, plot = kbh_pie_chart)
+byen_kobenhavn_data
+```
+
+
+
+
+
+```{r}
+ggplot(byen_kobenhavn_data, aes(x="", y=prop, fill=Mandater)) +
+  geom_bar(stat="identity", width=1, color="white")
+```
+
+
+```{r}
+# Create Data
+data <- data.frame(
+  group=LETTERS[1:5],
+  value=c(13,7,9,21,2)
+)
+
+# Compute the position of labels
+data <- data %>% 
+  arrange(desc(group)) %>%
+  mutate(prop = value / sum(data$value) *100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop )
+
+# Basic piechart
+ggplot(data, aes(x="", y=prop, fill=group)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  theme(legend.position="none") +
+  
+  geom_text(aes(y = ypos, label = group), color = "white", size=6) +
+  scale_fill_brewer(palette="Set1")
+```
+
+
+```{r}
+ggplot(data, aes(x="", y=prop, fill=group)) +
+  geom_bar(stat="identity", width=1, color="white")
+```
+
+
+Respect population density
+
+```{r}
+
+```
+
+```{r}
+# Get the shape file of Africa
+library(maptools)
+data(wrld_simpl)
+afr=wrld_simpl[wrld_simpl$REGION==2,]
+ 
+# We can visualize the region's boundaries with the plot function
+plot(afr)
+
+# We work with the cartogram library 
+library(cartogram)
+ 
+# construct a cartogram using the population in 2005
+afr_cartogram <- cartogram(afr, "POP2005", itermax=5)
+ 
+# This is a new geospatial object, we can visualise it!
+plot(afr_cartogram)
+
+
+
+
+library(cartogram)
+library(maptools)
+library(rgdal)
+
+afr <- spTransform(wrld_simpl[wrld_simpl$REGION==2 & wrld_simpl$POP2005 > 0,], CRS("+init=epsg:3395"))
+afr_sf <- st_as_sf(afr)
+afr_sf
+afr_sf_carto <- cartogram_cont(afr_sf, "POP2005", 3)
+afr_sf_carto
+
+
+par(mfcol=c(1,3))
+plot(afr, main="original")
+plot(afr_sf_carto, main="distorted (sp)")
+plot(st_geometry(afr_sf_carto), main="distorted (sf)")
+```
+
+
+```{r}
+
+```
+
+
+
+foreground layer (using map_data_2)
+
+```{r}
+mandat_number_data <- mutate(map_data_2, )
+
+```
+
+
+
+
+
+
+
+Failed attempts:
+
+
+1
+```{r}
+map_data_2[1]
+```
+
+
+
+```{r}
+
+for(row in map_data_2["Partier"]){
+  if (navn == "A. Socialdemokratiet" | navn == "B. Radikale Venstre" | navn == "F. SF - Socialistisk Folkeparti" | navn == "Ø. Enhedslisten" | navn == "Å. Alternativet"){
+    #add "red" to list
+  }
+  
+  print(row)
+}
+
+```
+
+```{r}
+map_data_3 <- mutate(map_data_3, block = function(x){
+  if (navn == "A. Socialdemokratiet" | navn == "B. Radikale Venstre" | navn == "F. SF - Socialistisk Folkeparti" | navn == "Ø. Enhedslisten" | navn == "Å. Alternativet"){
+    return("red")
+  } else {
+    return("blue")
+  }
+})
+map_data_3
+```
+
+
+
+```{r}
+ggplot(map_data_2["Partier"]) + geom_sf(aes(fill=Partier)) + xlab("longtitude") + ylab("lattitude")
+
+```
+
+
+
+
+2
+
+```{r}
+#sum_column <- function(data,x,y){
+#  if (data[y] == "red"){
+#    
+#  }
+#}
+
+kobenhavn_data <- filter(map_data_3, navn == "Byen København")
+#kobenhavn_data <- mutate(kobenhavn_data, winner = if)
+kobenhavn_data
+```
+
+
+
+4
+```{r}
+#winner_map_data$winning_block_2 <- diff(as.numeric(winner_map_data$navn)) != 0
+
+
+#winner_map_data <- mutate(winner_map_data, winning_block_2 = diff(winner_map_data$))
+
+
+#winner_map_data <- winner_map_data %>% group_by(navn, block) %>% mutate(winning_block_2 = if_else(duplicated(block) == FALSE, 1, 0))
+
+#map_data_3 <- mutate(map_data_3, winning_block_dplicated = if_else())
+
+
+#map_data_3[!duplicated(map_data_3$navn), ]
+
+#map_data_3 <- mutate(map_data_3, winning_block_dplicated =  duplicated(navn))
+
+#map_data_3$winning_block <- if(duplicated(map_data_3$navn)){return "tie"}
+```
+
+
+
+
+noter til ting
+
+```{r}
+d <- data.frame(a = c("A", "B", "B", "C", "C", "D"), b = 1:6)
+d
+who.has.many <- d %>% group_by(a) %>% summarise(many = n()>1)
+who.has.many
+left_join(d, who.has.many, by = "a")
+
+
+#Eller uden piping: checkker <- summarise(group_by(<dataframe>, <column>), <navn på ny column = n()>1)
+#left_join(<dataframe>, checkker, by = "<column name>")
+```
+
+
+
