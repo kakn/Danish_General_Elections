@@ -1,0 +1,352 @@
+---
+title: "task2_sketching"
+author: "Nicolaj Valsted"
+date: "11/5/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Library Imports
+
+```{r,message = FALSE, warning = FALSE}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+theme_set(theme_bw())
+library(sf)
+library(ggspatial)
+library(UsingR)
+library(rmarkdown)
+library(grid)
+library(cartogram)
+library(tmap)
+library(maptools)
+```
+
+## Reading and processing raw data
+
+### Load data
+
+```{r,message = FALSE, warning = FALSE}
+FV19TOTA <- read_excel("data/FV19TOTA.xlsx") # No external preprocessing has been done to the imported data
+FV19TOTA <- FV19TOTA %>% rename("Party" = "Folketingsvalget 2019 efter valgresultat, område og tid",
+                    "Area" = "...2",
+                    "Votes" = "...3")
+FV19TOTA$Votes <- as.integer(FV19TOTA$Votes)
+
+characteristics_data <- read_excel("data/PollingDistrictCharacteristics.xlsx",skip=4)
+```
+
+### Fixing spelling inconsistencies
+
+```{r}
+name_mapping_from <- c("Dragør Skole",
+                       "Sønderkærhallen",
+                       "Fuglebjerg Hallen",
+                       "Grønbro-Hallen",
+                       "Montebello, Gurrevej 90",
+                       "Ll. Næstved Skole-Karrebækvej",
+                       "Kobberbakkeskolen Sct. Jørgens",
+                       "Ll Næstved Skole-Herlufsholmve",
+                       "Ll Næstved Skole - Hyllinge",
+                       "Ll Næstved Skole - Karrebæk",
+                       "Karlslundehallerne",
+                       "Tunehallerne",
+                       "Hundigehallen",
+                       "Havdrup",
+                       "Csv-Skolen",
+                       "Kroggårdskolen",
+                       "Rasmus Rask Skolen",
+                       "Bjerreby",
+                       "Skibethallen Nord",
+                       "Grejsdalshallen Nord",
+                       "Petersmindehallen Nord",
+                       "Dgi-Huset Syd",
+                       "Vindinghallen Syd",
+                       "Csv Syd",
+                       "Tilst Skole, Tilst",
+                       "Lystrup Skole",
+                       "Gjerlev Forsamlingshus",
+                       "Asferg Forsamlingshus",
+                       "Skovlunde Skole - Syd",
+                       "Harmonien",
+                       "Det Nordlige Strandområde",
+                       "Det Sydlige Strandområde",
+                       "Landet",
+                       "Randbøl Nord",
+                       "Løget Kirke Syd")
+
+name_mapping_to <- c("Dragør Skole Syd",
+                     "Sønderkærskolen",
+                     "Fuglebjerg",
+                     "Grønbro Hallen",
+                     "Skolen ved Gurrevej",
+                     "Lille Næstved Skole - Karrebæk",
+                     "Kobberbakkeskolen - Sct. Jørge",
+                     "Lille Næstved Skole - Herlufsh",
+                     "Lille Næstved Skole - Hyllinge",
+                     "Lille Næstved Skole - Karrebæk",
+                     "Karlslunde Hallerne",
+                     "Tune Hallerne",
+                     "Hundige Hallen",
+                     "Havdrup Idrætscenter",
+                     "CSV-Skolen",
+                     "Kroggårdsskolen",
+                     "Rasmus Rask-Skolen",
+                     "Bjerreby/Landet",
+                     "Skibet Hallen Nord",
+                     "Grejsdalen Nord",
+                     "Multihallen v. Petersmindeskol",
+                     "DGI-Huset Syd",
+                     "Vinding Idræts Center Syd",
+                     "CSV - Vejle Syd",
+                     "TST Aktiv-Center, Tilst",
+                     "Lystrup Hallen",
+                     "Gjerlev Aktivitetshus",
+                     "Asferg Træningshus",
+                     "Idrætshallen",
+                     "Sydstevnshallen",
+                     "Munkekærhallen",
+                     "Solrød Idrætscenter",
+                     "Bjerreby/Landet",
+                     "Vandel Nord",
+                     "Kvartershuset Syd")
+
+
+combined_name_mapping <- data.frame(from = name_mapping_from, to = name_mapping_to)
+
+for (i in 1:length(name_mapping_from))
+{
+  idx <- which(characteristics_data[5] == name_mapping_from[i])
+  characteristics_data[idx,5] = name_mapping_to[i]
+}
+
+combined_name_mapping
+```
+
+### Fill empty spaces between parties for joining later
+
+```{r}
+FV19TOTA <- fill(FV19TOTA, "Party", .direction = "down")
+```
+
+# Merge and filter
+
+```{r}
+characteristics_data <- characteristics_data %>% rename("Area" = "Valgdistrikt - navn")
+rough_merged <- full_join(FV19TOTA, characteristics_data, by = "Area")
+vote_characteristics <- subset(rough_merged, !is.na(rough_merged$Storkreds))
+vote_characteristics <- vote_characteristics %>% rename("Polling_district" = "Area")
+```
+
+```{r}
+head(vote_characteristics)
+```
+
+## Adding parties as columns
+
+```{r}
+characteristics_data_w_parties <- characteristics_data
+characteristics_data_w_parties <- characteristics_data_w_parties[-c(1,2,3,4),]
+#characteristics_data_w_parties
+
+parties <- unique(vote_characteristics$Party)
+parties <- parties[which(!is.na(parties))]
+
+for (i in 1:length(parties))
+{
+  party_votes <- c()
+  for (j in 5:length(characteristics_data$Opstillingskreds))
+  {
+    slc <- slice(characteristics_data,j)
+    party_votes <- c(party_votes,subset(vote_characteristics,
+                                        Party == parties[i] &
+                                        Opstillingskreds == slc$Opstillingskreds &
+                                        Polling_district == slc$Area &
+                                        Storkreds == slc$Storkreds &
+                                        !is.na(Votes))$Votes[1])
+  }
+  
+  characteristics_data_w_parties[parties[i]] <- party_votes
+}
+
+head(characteristics_data_w_parties)
+```
+
+# Preparing for map data
+
+```{r}
+PD_w_votes <- characteristics_data_w_parties[-c(1,3,4,5,8,9,10,11,12,13,14,15,16,17,18,19,20)]
+
+PD_w_votes$People <- as.integer(PD_w_votes$`Antal personer...6`) +
+                         as.integer(PD_w_votes$`Antal personer...7`)
+
+PD_w_votes <- PD_w_votes[-c(2,3)]
+
+#Combined votes of parties that made it into parliament
+PD_w_votes$TotalVotes <- PD_w_votes$`A. Socialdemokratiet` +
+                             PD_w_votes$`B. Radikale Venstre` +
+                             PD_w_votes$`C. Det Konservative Folkeparti` +
+                             PD_w_votes$`D. Nye Borgerlige` +
+                             PD_w_votes$`F. SF - Socialistisk Folkeparti` +
+                             PD_w_votes$`I. Liberal Alliance` +
+                             PD_w_votes$`O. Dansk Folkeparti` +
+                             PD_w_votes$`V. Venstre, Danmarks Liberale Parti` +
+                             PD_w_votes$`Ø. Enhedslisten - De Rød-Grønne` +
+                             PD_w_votes$`Å. Alternativet`
+
+for (i in 1:length(PD_w_votes$Opstillingskreds))
+{
+  split_string <- strsplit(PD_w_votes$Opstillingskreds[i], " ")[[1]]
+  PD_w_votes$Opstillingskreds[i] <- paste(split_string[-c(1,length(split_string))],collapse=" ")
+}
+
+NDs = unique(PD_w_votes$Opstillingskreds)
+
+collapsed_data <- slice(PD_w_votes,1)
+for (i in 1:length(NDs))
+{
+  ss_df <- subset(PD_w_votes, Opstillingskreds == NDs[i])
+  tmp_df <- ss_df[1,-1]
+  
+  for (j in 2:nrow(ss_df))
+  {
+    tmp_df <- tmp_df[1,] + ss_df[j,-1]
+  }
+  
+  tmp_df$Opstillingskreds <- NDs[i]
+  
+  collapsed_data <- bind_rows(collapsed_data,tmp_df)
+  
+}
+collapsed_data <- collapsed_data[-1,]
+head(collapsed_data)
+```
+
+## Loading map data
+
+```{r}
+OpK <- read_sf("E:/pile_of_data/FYP4/DAGI/dagi_10m_nohist_l1.opstillingskreds/opstillingskreds.shp")
+OpK <- st_transform(OpK, CRS("+init=epsg:3395"))
+OpK <- st_zm(OpK, drop = TRUE, what = "ZM")
+
+OpK <- OpK %>% rename("Opstillingskreds" = "navn")
+```
+
+### Fixing spelling inconsistencies
+
+```{r}
+name_mapping_from <- c("Aarhus Nord",
+                       "Aarhus Øst",
+                       "Aarhus Syd",
+                       "Aarhus Vest")
+
+name_mapping_to <- c("Århus Nord",
+                     "Århus Øst",
+                     "Århus Syd",
+                     "Århus Vest")
+
+combined_name_mapping <- data.frame(from = name_mapping_from, to = name_mapping_to)
+
+for (i in 1:length(name_mapping_from))
+{
+  idx <- which(OpK[16]$Opstillingskreds == name_mapping_from[i])
+  OpK[idx,16] = name_mapping_to[i]
+}
+
+combined_name_mapping
+```
+
+## Merging map data with dataset containing votes for all nomination districts
+
+```{r}
+OpK_merged <- full_join(OpK, collapsed_data, by = "Opstillingskreds")
+#OpK_merged <- OpK_merged[-which(is.na(OpK_merged$`A. Socialdemokratiet`)),]
+#OpK_merged <- OpK_merged[-which(is.na(OpK_merged$`opstilling`)),]
+```
+
+## Distorting the original shape file to create a cartogram shape file
+
+```{r}
+OpK_cont <- cartogram_cont(OpK_merged, "TotalVotes", itermax = 10)
+```
+
+### Result of distorting the shape, weighted by combined number of votes cast for parties that made it into parliament
+
+```{r}
+tm_shape(OpK_cont) + tm_polygons("TotalVotes", style= "jenks") +
+  tm_layout(frame = FALSE, legend.position = c("right","top"))
+```
+
+# Adding election results to cartogram
+
+```{r}
+red_parties_sum <- OpK_cont$`A. Socialdemokratiet` +
+                   OpK_cont$`B. Radikale Venstre` +
+                   OpK_cont$`F. SF - Socialistisk Folkeparti` +
+                   OpK_cont$`Ø. Enhedslisten - De Rød-Grønne` +
+                   OpK_cont$`Å. Alternativet`
+
+blue_parties_sum <- OpK_cont$`V. Venstre, Danmarks Liberale Parti` +
+                    OpK_cont$`O. Dansk Folkeparti` +
+                    OpK_cont$`C. Det Konservative Folkeparti` +
+                    OpK_cont$`I. Liberal Alliance` +
+                    OpK_cont$`D. Nye Borgerlige`
+  
+diff_vector <- red_parties_sum - blue_parties_sum
+OpK_cont$RvsB <- diff_vector
+```
+
+## Styling the final plot
+
+```{r}
+main_plot <- ggplot() +
+  geom_sf(data = OpK_cont, size = 0.5, aes(fill = RvsB)) +
+  
+  scale_fill_gradient2(low = "darkblue",
+                       mid = "white",
+                       high = "darkred",
+                       midpoint = 0,
+                       name = "R vs. B votes") +
+  
+  ggtitle("Vote distribution in nomination districts",
+          subtitle = "Difference between number of red and blue votes") +
+  
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        plot.title  = element_text(size = 20)) +
+  
+  coord_sf(xlim = c(900000, 1500000), ylim = c(7220000, 7880000), expand=FALSE)
+
+bornholm_plot <- ggplot() +
+  geom_sf(data = OpK_cont, size = 0.5, aes(fill = RvsB)) +
+  
+  scale_fill_gradient2(low = "darkblue",
+                       mid = "white",
+                       high = "darkred",
+                       midpoint = 0,
+                       guide = FALSE) +
+  
+  ggtitle("Bornholm") +
+  
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        plot.title  = element_text(size = 10)) +
+  
+  coord_sf(xlim = c(1631000, 1695000), ylim = c(7322000, 7390000), expand=FALSE)
+
+vp <- viewport(width = 0.25, height = 0.25, x = 0.57, y = 0.725)
+
+#pdf("vote_distribution_map.pdf")
+
+print(main_plot)
+print(bornholm_plot, vp=vp)
+
+#dev.off()
+```
+
